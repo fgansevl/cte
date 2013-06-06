@@ -22,7 +22,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''
 
-import sys
+import sys, os
 BRACES = ['(:', ':)']
 
 # attrdict - a class that lets a dict be used as an object
@@ -243,19 +243,21 @@ def generate(initial, pieces):
   # first, generate the initial code
   yield O('#!/usr/bin/python')
   yield O('import sys')
+  yield O('sys.path.insert(0, %r)' % os.path.dirname(os.path.abspath(__file__)))
   yield O('import cte')
 
   # now, generate the 'render' function
-  yield O('def render(settings = {}):')
+  yield O('settings = %r' % initial)
+  yield O('def render(data = {}):')
   indent()
-  yield O('data = %r' % initial)
-  yield O('data.update(settings)')
+  yield O('initial = dict(settings)')
+  yield O('initial.update(data)')
   yield O('class _B(Exception): pass # break')
   yield O('class _C(Exception): pass # continue')
   yield O('output = []')
   yield O('_ = output.append')
   yield O('_o = cte.stdout(_)')
-  yield O('_s = cte.Scope(data)')
+  yield O('_s = cte.Scope(initial)')
   yield O('try:')
   yield O(T+'with _s():')
   indent(2)
@@ -358,13 +360,15 @@ def generate(initial, pieces):
     yield O(tail)
 
   # finally, generate the script startup code
-  yield O('if __name__ == "__main__":')
-  yield O(T+'d = cte.parse()')
-  yield O(T+'print render(d)')
+  yield O('if __name__ == "__main__": cte.main(render, settings)')
 
-def parse(args = None, usage = ''):
+def get_parser():
   from optparse import OptionParser
-  parser = OptionParser(usage = '%prog ' + usage + ' [options] key=val ...')
+  return OptionParser(usage = '%prog [options] key=val ...')
+
+def parse(parser, args = None):
+  parser.add_option("-o", "--output", action = "store",
+		    help="write output to file")
   parser.add_option("-i", "--ini", action = "store",
 		    help="load settings from INI file")
   parser.add_option("-j", "--json", action = "store",
@@ -402,17 +406,31 @@ def parse(args = None, usage = ''):
   for arg in args:
     key, val = [s.strip() for s in arg.split('=', 1)]
     d[key] = val
-  return d
+  options.data = d
+  return options
+
+def main(render, settings):
+  parser = get_parser()
+  parser.add_option('--initial', action = "store_true", help = "Show compiled-in defaults and exit")
+  o = parse(parser)
+  if o.initial: print settings
+  else:
+    out = render(o.data)
+    if o.output: file(o.output, 'w').write(out)
+    else: print out,
 
 # TODO: pass extra args to parse for extending the options
 # ?also return the xtra args?
 if __name__ == '__main__':
-  if len(sys.argv) == 1:
-    sys.argv.append('-h')
-  if '-h' in sys.argv:
-    parse(sys.argv, 'template')
+  parser = get_parser()
+  parser.add_option('-t', '--template', action = "store", help = "The template to compile")
+  o = parse(parser)
+  if not o.template:
+    parser.error("Missing template")
+  template = file(o.template).read()
+  code = '\n'.join(generate(o.data, iterate(template)))
+  if o.output:
+    file(o.output, 'w').writelines([code, '\n'])
+    os.chmod(o.output, 0755)
   else:
-    template = file(sys.argv[1]).read()
-    d = parse(sys.argv[2:], 'template')
-  print '\n'.join(generate(d, iterate(template)))
-
+    print code
