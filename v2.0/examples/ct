@@ -1,0 +1,7 @@
+(:@ name,
+    feeling
+:)
+Hello (: name :), How are you
+(:? feeling :)
+I'm (: feeling :), thank you.
+(:?:)
